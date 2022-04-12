@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"github.com/tatsushid/go-fastping"
+	"io"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -10,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/tatsushid/go-fastping"
+	"github.com/Walterpepe/go-fastping"
 )
 
 type response struct {
@@ -19,48 +23,53 @@ type response struct {
 }
 
 func main() {
-	var useUDP bool
-	flag.BoolVar(&useUDP, "udp", false, "use non-privileged datagram-oriented UDP as ICMP endpoints")
-	flag.BoolVar(&useUDP, "u", false, "use non-privileged datagram-oriented UDP as ICMP endpoints (shorthand)")
+	var filename string
+	flag.StringVar(&filename, "f", "target.txt", "read list of targets from a file")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage:\n  %s [options] hostname [source]\n\nOptions:\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	hostname := flag.Arg(0)
-	if len(hostname) == 0 {
-		flag.Usage()
-		os.Exit(1)
+	fh, err := os.OpenFile(filename, os.O_RDWR, 0666)
+	defer fh.Close()
+	if err != nil {
+		log.Printf("Open file %s error! %v", filename, err)
+		return
 	}
 
-	source := ""
-	if flag.NArg() > 1 {
-		source = flag.Arg(1)
+	var targets []string
+	buf := bufio.NewReader(fh)
+	for {
+		line, err := buf.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				//fmt.Println("File read ok!")
+				break
+			} else {
+				log.Println("Read file error!", err)
+				return
+			}
+		}
+		if strings.TrimSpace(line) != "" {
+			targets = append(targets, line)
+		}
 	}
 
 	p := fastping.NewPinger()
-	if useUDP {
-		p.Network("udp")
-	}
-
 	netProto := "ip4:icmp"
-	if strings.Index(hostname, ":") != -1 {
-		netProto = "ip6:ipv6-icmp"
-	}
-	ra, err := net.ResolveIPAddr(netProto, hostname)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
 
-	if source != "" {
-		p.Source(source)
-	}
-
+	// 填入探测地址
 	results := make(map[string]*response)
-	results[ra.String()] = nil
-	p.AddIPAddr(ra)
+
+	for _, target := range targets {
+		ra, err := net.ResolveIPAddr(netProto, target)
+		if err != nil {
+			continue
+		}
+		results[ra.String()] = nil
+		p.AddIPAddr(ra)
+	}
 
 	onRecv, onIdle := make(chan *response), make(chan bool)
 	p.OnRecv = func(addr *net.IPAddr, t time.Duration) {

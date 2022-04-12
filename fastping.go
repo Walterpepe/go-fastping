@@ -534,7 +534,7 @@ func (p *Pinger) sendICMP(conn, conn6 *icmp.PacketConn) (map[string]*net.IPAddr,
 		wg.Add(1)
 		go func(conn *icmp.PacketConn, ra net.Addr, b []byte) {
 			for {
-				if _, err := conn.WriteTo(bytes, ra); err != nil {
+				if _, err := conn.WriteTo(b, ra); err != nil {
 					if neterr, ok := err.(*net.OpError); ok {
 						if neterr.Err == syscall.ENOBUFS {
 							continue
